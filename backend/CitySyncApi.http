@@ -1,0 +1,6 @@
+@CitySyncApi_HostAddress = http://localhost:5195
+
+GET {{CitySyncApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
