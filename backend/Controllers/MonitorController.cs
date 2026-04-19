@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-
+using CitySync.Models;
 namespace CitySyncApi.Controllers
 {
     // Diese beiden Befehle OHNE // sind extrem wichtig!
@@ -7,15 +7,7 @@ namespace CitySyncApi.Controllers
     [Route("api/monitors")]
     public class MonitorController : ControllerBase
     {
-        // 1. Die Hilfsklasse (DTO)
-        // 1. Die Hilfsklasse (DTO) - Jetzt mit Standardwerten!
-        public class ScreenConfigDto
-        {
-            public string LayoutType { get; set; } = "sidebar";
-            public int ButtonCount { get; set; }
-            public string ButtonNames { get; set; } = "";
-            public string ButtonTypes { get; set; } = "";
-        }
+        
 
         // 2. Der Endpunkt
         [HttpPut("{id}/config")]

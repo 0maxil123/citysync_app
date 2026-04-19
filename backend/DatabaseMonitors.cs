@@ -1,7 +1,7 @@
 using Microsoft.Data.Sqlite;
 using System.Diagnostics;
 using System.Collections.Generic; // Wichtig für die Listen
-
+using CitySync.Models;
 namespace CitySyncApi
 {
     public static class DatabaseMonitors
@@ -97,9 +97,103 @@ namespace CitySyncApi
                         FOREIGN KEY (MonitorId) REFERENCES Monitors(Id) ON DELETE CASCADE
                     );";
                 command.ExecuteNonQuery();
+                // 5. Tabelle für System-Einstellungen (Key-Value Store)
+                command.CommandText = @"
+                    CREATE TABLE IF NOT EXISTS SystemSettings (
+                        SettingKey TEXT PRIMARY KEY,
+                        SettingValue TEXT NOT NULL
+                    );";
+                command.ExecuteNonQuery();
 
+                // Standardwerte direkt in die Datenbank schreiben (falls sie noch leer ist)
+                command.CommandText = @"
+                    INSERT OR IGNORE INTO SystemSettings (SettingKey, SettingValue) VALUES ('Theme', 'dark');
+                    INSERT OR IGNORE INTO SystemSettings (SettingKey, SettingValue) VALUES ('DefaultDuration', '12');
+                    INSERT OR IGNORE INTO SystemSettings (SettingKey, SettingValue) VALUES ('AutoDeleteYears', '3');
+                ";
+                command.ExecuteNonQuery();
+
+                    // 6. Tabelle für Rollen
+                command.CommandText = @"
+                    CREATE TABLE IF NOT EXISTS Roles (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Name TEXT NOT NULL UNIQUE
+                    );";
+                command.ExecuteNonQuery();
+
+                // 7. Tabelle für Berechtigungen (Permissions)
+                command.CommandText = @"
+                    CREATE TABLE IF NOT EXISTS Permissions (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        PermissionKey TEXT NOT NULL UNIQUE,
+                        Description TEXT NOT NULL
+                    );";
+                command.ExecuteNonQuery();
+
+                // 8. Verknüpfungstabelle (Welche Rolle hat welche Berechtigung?)
+                command.CommandText = @"
+                    CREATE TABLE IF NOT EXISTS RolePermissions (
+                        RoleId INTEGER NOT NULL,
+                        PermissionId INTEGER NOT NULL,
+                        PRIMARY KEY (RoleId, PermissionId),
+                        FOREIGN KEY (RoleId) REFERENCES Roles(Id) ON DELETE CASCADE,
+                        FOREIGN KEY (PermissionId) REFERENCES Permissions(Id) ON DELETE CASCADE
+                    );";
+                command.ExecuteNonQuery();
+
+                // 9. Tabelle für Benutzer
+                command.CommandText = @"
+                    CREATE TABLE IF NOT EXISTS Users (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Name TEXT NOT NULL,
+                        Email TEXT NOT NULL UNIQUE,
+                        PasswordHash TEXT NOT NULL,
+                        RoleId INTEGER NOT NULL,
+                        LastLogin DATETIME,
+                        FOREIGN KEY (RoleId) REFERENCES Roles(Id)
+                    );";
+                command.ExecuteNonQuery();
+
+
+                // --- STANDARDWERTE (SEEDING) ---
+                
+                command.CommandText = @"
+                    INSERT OR IGNORE INTO SystemSettings (SettingKey, SettingValue) VALUES ('Theme', 'dark');
+                    INSERT OR IGNORE INTO SystemSettings (SettingKey, SettingValue) VALUES ('DefaultDuration', '12');
+                    INSERT OR IGNORE INTO SystemSettings (SettingKey, SettingValue) VALUES ('AutoDeleteYears', '3');
+                    
+                    -- Standard-Rollen anlegen
+                    INSERT OR IGNORE INTO Roles (Id, Name) VALUES (1, 'Administrator');
+                    INSERT OR IGNORE INTO Roles (Id, Name) VALUES (2, 'Redakteur');
+                    INSERT OR IGNORE INTO Roles (Id, Name) VALUES (3, 'Techniker');
+
+                    -- Standard-Berechtigungen anlegen
+                    INSERT OR IGNORE INTO Permissions (Id, PermissionKey, Description) VALUES (1, 'screens.view', 'Monitore & Status sehen');
+                    INSERT OR IGNORE INTO Permissions (Id, PermissionKey, Description) VALUES (2, 'screens.manage', 'Monitore hinzufügen/löschen');
+                    INSERT OR IGNORE INTO Permissions (Id, PermissionKey, Description) VALUES (3, 'media.view', 'Inhalte ansehen');
+                    INSERT OR IGNORE INTO Permissions (Id, PermissionKey, Description) VALUES (4, 'media.upload', 'Neues hochladen/schreiben');
+                    INSERT OR IGNORE INTO Permissions (Id, PermissionKey, Description) VALUES (5, 'media.publish', 'Auf Monitoren Live schalten');
+                    INSERT OR IGNORE INTO Permissions (Id, PermissionKey, Description) VALUES (6, 'media.delete', 'Inhalte endgültig löschen');
+                    INSERT OR IGNORE INTO Permissions (Id, PermissionKey, Description) VALUES (7, 'users.manage', 'Benutzer verwalten');
+
+                    -- Dem Admin (Role 1) alle Rechte geben
+                    INSERT OR IGNORE INTO RolePermissions (RoleId, PermissionId) VALUES (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 6), (1, 7);
+
+                    -- Dem Redakteur (Role 2) nur Content-Rechte geben (1, 3, 4, 5, 6)
+                    INSERT OR IGNORE INTO RolePermissions (RoleId, PermissionId) VALUES (2, 1), (2, 3), (2, 4), (2, 5), (2, 6);
+
+                    -- Dem Techniker (Role 3) nur Hardware-Rechte geben (1, 2)
+                    INSERT OR IGNORE INTO RolePermissions (RoleId, PermissionId) VALUES (3, 1), (3, 2);
+
+                    -- Den ersten Super-Admin Benutzer anlegen (Passwort: 'admin123' - sollte später verschlüsselt sein!)
+                    -- HINWEIS: Für den Start steht hier das Passwort im Klartext. Wenn wir das Login bauen, tauschen wir das gegen einen Hash aus.
+                    INSERT OR IGNORE INTO Users (Id, Name, Email, PasswordHash, RoleId) 
+                    VALUES (1, 'Super Admin', 'admin@citysync.at', 'admin123', 1);
+                ";
+                command.ExecuteNonQuery();
             }
-            Debug.WriteLine("Datenbank initialisiert.");
+            Debug.WriteLine("Datenbank erfolgreich initialisiert und mit RBAC geupdated.");
+
         }
 
         // --- STANDORT LOGIK ---
@@ -646,22 +740,7 @@ public static void UpdateMediaData(
                 PublishMonitor(monitorId); 
             }
         }
-        // --- NEU: ARCHIV FUNKTIONEN ---
-        public class MediaArchiveItem
-                {
-                    public int Id { get; set; } 
-                    public int OriginalMediaId { get; set; } 
-                    public string MonitorId { get; set; }
-                    public string Title { get; set; }
-                    public string DocNumber { get; set; }
-                    public string Category { get; set; }
-                    public string StartDate { get; set; } 
-                    public string EndDate { get; set; } 
-                    public string Url { get; set; } 
-                    public int IsProtected { get; set; }
-                    public string PinCode { get; set; }
-                    public DateTime ArchivedAt { get; set; }
-                }
+        
         public static List<MediaArchiveItem> GetArchivedMediaForMonitor(string monitorId)
         {
             var archiveList = new List<MediaArchiveItem>();
