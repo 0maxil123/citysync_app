@@ -9,6 +9,8 @@ using System.Collections.Generic;
 using Xabe.FFmpeg;
 using CitySync.Models;
 using Microsoft.Data.Sqlite;
+using Microsoft.AspNetCore.SignalR; // Wichtig für IHubContext
+using CitySync.Hubs; // Oder wie auch immer der Ordner heißt, in dem dein PlayerHub liegt
 
 namespace CitySyncApi.Controllers
 {
@@ -16,6 +18,15 @@ namespace CitySyncApi.Controllers
     [Route("api/media")]
     public class MediaController : ControllerBase
     {
+        // --- DAS HIER EINFÜGEN ---
+        private readonly IHubContext<PlayerHub> _hubContext;
+
+        // Der Konstruktor injiziert den HubContext beim Starten des Backends
+        public MediaController(IHubContext<PlayerHub> hubContext)
+        {
+            _hubContext = hubContext;
+        }
+        
         // =========================================================================
         // DER TÜRSTEHER: Prüft, ob der User das Recht hat
         // =========================================================================
@@ -197,14 +208,22 @@ namespace CitySyncApi.Controllers
         }
 
         [HttpPost("publish-all/{monitorId}")]
-        public IActionResult PublishAllItems(string monitorId, [FromQuery] string tabName, [FromBody] PublishRequest req)
+        public async Task<IActionResult> PublishAllItems(string monitorId, [FromQuery] string tabName, [FromBody] PublishRequest req)
         {
             if (!HasPermission(req.UserId, "media.publish")) return StatusCode(403, "Keine Berechtigung.");
 
             try {
+                // 1. In der Datenbank auf IsLive = 1 setzen
                 DatabaseMonitors.PublishAllMediaForMonitor(monitorId, tabName);
-                return Ok(new { message = "Alle live" });
-            } catch (Exception ex) { return BadRequest(ex.Message); }
+
+                // 2. Den Monitor per Funk (SignalR) wecken
+                // Wir schicken den Befehl "UpdateContent" an alle Geräte in der Gruppe (monitorId)
+                await _hubContext.Clients.Group(monitorId).SendAsync("UpdateContent");
+
+                return Ok(new { message = "Alle Inhalte sind jetzt live und der Monitor wurde benachrichtigt." });
+            } catch (Exception ex) { 
+                return BadRequest(ex.Message); 
+            }
         }
 
         // =========================================================================
@@ -337,7 +356,7 @@ namespace CitySyncApi.Controllers
         // LAYOUT & SETTINGS
         // =========================================================================
         [HttpPut("monitor/{id}/layout")]
-        public IActionResult UpdateMonitorLayout(string id, [FromBody] LayoutUpdateRequest req)
+        public async Task<IActionResult> UpdateMonitorLayoutAsync(string id, [FromBody] LayoutUpdateRequest req)
         {
             if (!HasPermission(req.UserId, "screens.manage")) return StatusCode(403, "Keine Berechtigung.");
 
@@ -358,6 +377,7 @@ namespace CitySyncApi.Controllers
 
                 command.ExecuteNonQuery();
             }
+            await _hubContext.Clients.Group(id).SendAsync("UpdateContent");
             return Ok(new { message = "Layout erfolgreich gespeichert!" });
         }
 
@@ -392,5 +412,6 @@ namespace CitySyncApi.Controllers
             }
             return Ok(new { message = "3 Test-Dokumente erfolgreich ins Archiv gelegt!" });
         }
+        
     }
 }

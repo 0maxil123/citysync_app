@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
-using CitySync.Models;
+using CitySync.Models; // Passe das an, falls dein Namespace anders ist
 
 namespace CitySync.Controllers
 {
@@ -30,9 +30,13 @@ namespace CitySync.Controllers
                         switch (key)
                         {
                             case "Theme": settings.Theme = value; break;
-                            case "DefaultDuration": settings.DefaultDuration = int.Parse(value); break;
-                            case "AutoDeleteYears": settings.AutoDeleteYears = int.Parse(value); break;
+                            case "DefaultDuration": settings.DefaultDuration = int.TryParse(value, out int d) ? d : 12; break;
+                            case "AutoDeleteYears": settings.AutoDeleteYears = int.TryParse(value, out int y) ? y : 3; break;
                             case "NightlyRestartTime": settings.NightlyRestartTime = value; break;
+                            // --- NEUE BRANDING KEYS ---
+                            case "MunicipalityName": settings.MunicipalityName = value; break;
+                            case "LogoBase64": settings.LogoBase64 = value; break;
+                            case "GlobalTicker": settings.GlobalTicker = value; break;
                         }
                     }
                 }
@@ -51,13 +55,20 @@ namespace CitySync.Controllers
                     var command = connection.CreateCommand();
                     command.Transaction = transaction;
 
-                    // Wir nutzen INSERT OR REPLACE, um die Werte effizient zu aktualisieren
-                    string[] keys = { "Theme", "DefaultDuration", "AutoDeleteYears", "NightlyRestartTime" };
+                    // Wir erweitern deine Arrays um die 3 neuen Felder
+                    string[] keys = { 
+                        "Theme", "DefaultDuration", "AutoDeleteYears", "NightlyRestartTime", 
+                        "MunicipalityName", "LogoBase64", "GlobalTicker" 
+                    };
+                    
                     string[] values = { 
-                        settings.Theme, 
+                        settings.Theme ?? "dark", 
                         settings.DefaultDuration.ToString(), 
                         settings.AutoDeleteYears.ToString(), 
-                        settings.NightlyRestartTime 
+                        settings.NightlyRestartTime ?? "",
+                        settings.MunicipalityName ?? "",
+                        settings.LogoBase64 ?? "",
+                        settings.GlobalTicker ?? ""
                     };
 
                     for (int i = 0; i < keys.Length; i++)

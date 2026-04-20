@@ -7,7 +7,7 @@ namespace CitySyncApi.Controllers
     [Route("api/monitors")]
     public class MonitorController : ControllerBase
     {
-        
+           
 
         // 2. Der Endpunkt
         [HttpPut("{id}/config")]

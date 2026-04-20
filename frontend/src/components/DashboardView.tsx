@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import jsQR from 'jsqr';
 import { ScreenCard } from './ScreenCard';
 import { AuthProvider, useAuth } from '../context/AuthContext'; 
-import { ChevronDown, Plus, LayoutGrid, CheckCircle2, XCircle, FolderOpen, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Scanner } from '@yudiel/react-qr-scanner';
+import { ChevronDown, Plus, LayoutGrid, CheckCircle2, XCircle, FolderOpen, Image as ImageIcon,QrCode, Trash2,Camera,X } from 'lucide-react';
 const API_BASE = "http://localhost:5195/api/dashboard";
 interface DashboardProps {
   globalTheme: 'dark' | 'light';
@@ -13,6 +14,8 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
   const [standorte, setStandorte] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const {user, hasPermission } = useAuth();
+  const [pairingCode, setPairingCode] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
 
   // 2. STATE: HINZUFÜGEN MODAL
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -92,40 +95,84 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
     };
     reader.readAsDataURL(file);
   };
+  // Wir machen die Funktion "async", damit sie auf den Server warten kann
+  const handleCodeSubmit = async () => {
+    if (pairingCode.length >= 6) {
+      try {
+        // 1. Das Backend fragen: Gibt es diesen Code?
+        const response = await fetch(`http://localhost:5195/api/player/verify/${pairingCode}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Wir splitten die Auflösung (z.B. "1920x1080") in Breite und Höhe für dein Design
+          const [width, height] = data.resolution.split('x');
+
+          // 2. Juhu! Wir setzen die ECHTEN Daten in den tempScreen
+          setTempScreen({ 
+            ip: data.ip, 
+            width: width || 'Unbekannt', 
+            height: height || '', 
+            code: pairingCode 
+          });
+        } else {
+          // Wenn der Code falsch ist, geben wir eine Warnung aus
+          alert("Fehler: Dieser Pairing-Code ist ungültig oder abgelaufen!");
+          setPairingCode(''); // Feld leeren, damit man neu tippen kann
+        }
+      } catch (error) {
+        console.error("Fehler bei der Server-Verbindung:", error);
+        alert("Konnte keine Verbindung zum Server herstellen.");
+      }
+    }
+  };
 
   // --- LOGIK: BILDCHIRM HINZUFÜGEN ---
   const confirmAddScreen = async () => {
-    if (!configData.name) return alert("Bitte Namen eingeben");
+  // Validierung: Name und Pairing-Code müssen da sein
+  if (!configData.name || !tempScreen?.code) {
+    alert("Bitte gib einen Namen an und stelle sicher, dass der Code gültig ist.");
+    return;
+  }
 
-    const newScreenId = 'screen_' + Date.now();
-    const locId = configData.locationId === 'new' ? 'loc_' + Date.now() : configData.locationId;
-    const locName = configData.locationId === 'new' ? configData.newLocationName : standorte.find(s => s.id === locId)?.name;
-
+  try {
     const payload = {
-      user: user?.id?.toString(),
-      id: newScreenId,
-      locationId: locId,
-      locationName: locName || "Unbekannter Standort",
-      name: configData.name,
-      ip: tempScreen.ip,
-      resolution: `${tempScreen.width}x${tempScreen.height}`
+      Name: configData.name,
+      LocationId: configData.locationId === 'new' ? null : configData.locationId,
+      NewLocationName: configData.locationId === 'new' ? configData.newLocationName : null,
+      PairingCode: tempScreen.code,
+      Ip: tempScreen.ip, // Großer Anfangsbuchstabe für C#
+      Resolution: `${tempScreen.width}x${tempScreen.height}` // Großer Anfangsbuchstabe
     };
 
-    try {
-      await fetch(`${API_BASE}/monitor`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+    const response = await fetch('http://localhost:5195/api/player/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log("Erfolgreich gekoppelt:", result);
       
+      // Modal schließen und aufräumen
       setIsModalOpen(false);
       setTempScreen(null);
-      setConfigData({ name: '', locationId: 'new', newLocationName: '' });
-      loadData(); // Liste neu vom Server laden
-    } catch (error) {
-      alert("Fehler beim Speichern im Backend");
+      setPairingCode('');
+      loadData();
+      
+    } else {
+      const errorData = await response.json();
+      // Wir schnappen uns jetzt einfach alles, egal wie C# es nennt!
+      const errorMessage = errorData.message || errorData.Message || errorData.title || JSON.stringify(errorData);
+      alert("Fehler beim Koppeln: " + errorMessage);
+      console.error("Vollständiger Server-Fehler:", errorData);
     }
-  };
+  } catch (error) {
+    console.error("Verbindungsfehler:", error);
+    alert("Server nicht erreichbar.");
+  }
+};
 
   // --- LOGIK: BEARBEITEN & LÖSCHEN ---
   const handleSaveEdit = async () => {
@@ -287,18 +334,84 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
       {/* --- MODALE UNVERÄNDERT, NUR FARBEN ANGEPASST --- */}
       {isModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(5px)' }}>
-          <div style={{ backgroundColor: colors.modalBg, padding: '40px 30px 30px 30px', borderRadius: '20px', width: '420px', textAlign: 'center', border: `1px solid ${colors.inputBorder}`, boxShadow: '0 20px 50px rgba(0,0,0,0.5)', transition: 'all 0.3s ease' }}>
+          <div style={{ backgroundColor: colors.modalBg, padding: '40px 30px 30px 30px', borderRadius: '20px', width: '420px', textAlign: 'center', border: `1px solid ${colors.inputBorder}`, boxShadow: '0 20px 50px rgba(0,0,0,0.5)', transition: 'all 0.3s ease', maxHeight: '90vh', overflowY: 'auto' }}>
             
             {!tempScreen ? (
               <>
                 <div style={{ backgroundColor: 'rgba(94, 66, 166, 0.1)', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
-                  <ImageIcon size={30} color={colors.primary} strokeWidth={1.5} />
+                  <QrCode size={30} color={colors.primary} strokeWidth={1.5} />
                 </div>
-                <h2 style={{ margin: '0 0 16px 0', fontSize: '22px', fontWeight: 700, color: colors.text, letterSpacing: '0.5px' }}>QR-Code hochladen</h2>
-                <p style={{ color: colors.textMuted, fontSize: '15px', lineHeight: '1.6', marginBottom: '32px' }}>Wähle ein Bild des QR-Codes aus, um die IP-<br/>Adresse automatisch zu konfigurieren.</p>
+                <h2 style={{ margin: '0 0 16px 0', fontSize: '22px', fontWeight: 700, color: colors.text, letterSpacing: '0.5px' }}>Monitor koppeln</h2>
+                <p style={{ color: colors.textMuted, fontSize: '15px', lineHeight: '1.6', marginBottom: '24px' }}>
+                  Gib den 6-stelligen Code ein oder scanne den QR-Code des Bildschirms.
+                </p>
+
+                {/* --- 1. MANUELLE EINGABE & KAMERA --- */}
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+                  <input 
+                    type="text" 
+                    placeholder="Code (z.B. 552594)" 
+                    maxLength={6}
+                    value={pairingCode}
+                    onChange={(e) => setPairingCode(e.target.value.toUpperCase())}
+                    style={{ flex: 1, padding: '14px', backgroundColor: colors.inputField, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', color: colors.text, outline: 'none', fontSize: '16px', fontWeight: 'bold', letterSpacing: '2px', textAlign: 'center' }} 
+                  />
+                  <button 
+                    onClick={() => setIsScanning(!isScanning)}
+                    style={{ padding: '0 16px', backgroundColor: isScanning ? '#ef4444' : colors.inputField, color: isScanning ? '#fff' : colors.text, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                    title="Kamera öffnen"
+                  >
+                    {isScanning ? <X size={20} /> : <Camera size={20} />}
+                  </button>
+                </div>
+
+                {/* --- 2. LIVE SCANNER (Wird nur gezeigt wenn Kamera an ist) --- */}
+                {isScanning && (
+                  <div style={{ borderRadius: '10px', overflow: 'hidden', border: `2px solid ${colors.primary}`, marginBottom: '16px' }}>
+                    <Scanner 
+                      onScan={(detectedCodes) => {
+                        // Der neue Scanner liefert ein Array. Wir nehmen den ersten erkannten Code.
+                        if (detectedCodes && detectedCodes.length > 0) {
+                          const text = detectedCodes[0].rawValue; // Hier steckt der eigentliche Text drin
+                          
+                          try {
+                            const url = new URL(text);
+                            const codeFromUrl = url.searchParams.get("code");
+                            if (codeFromUrl) {
+                              setPairingCode(codeFromUrl);
+                              setIsScanning(false);
+                            }
+                          } catch (e) {
+                            setPairingCode(text);
+                            setIsScanning(false);
+                          }
+                        }
+                      }} 
+                      onError={(error) => console.log(error)} 
+                    />
+                  </div>
+                )}
+
+                {/* WEITER BUTTON (Wird aktiv, sobald 6 Zeichen da sind) */}
+                {pairingCode.length >= 6 && (
+                  <button onClick={handleCodeSubmit} style={{ width: '100%', padding: '14px', backgroundColor: colors.primary, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', marginBottom: '24px', boxShadow: '0 4px 12px rgba(94, 66, 166, 0.3)' }}>
+                    Weiter zur Konfiguration
+                  </button>
+                )}
+
+                <div style={{ display: 'flex', alignItems: 'center', margin: '20px 0', color: colors.textMuted, fontSize: '12px' }}>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: colors.inputBorder }}></div>
+                  <span style={{ padding: '0 10px' }}>ODER VIA SCREENSHOT</span>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: colors.inputBorder }}></div>
+                </div>
+
+                {/* --- 3. DATEI UPLOAD (Dein alter Button) --- */}
                 <input type="file" accept="image/*" ref={fileInputRef} onChange={handleQRUpload} style={{ display: 'none' }} />
-                <button onClick={() => fileInputRef.current?.click()} style={{ width: '100%', padding: '14px', backgroundColor: colors.primary, color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', marginBottom: '20px' }}>
-                  Datei auswählen
+                <button onClick={() => fileInputRef.current?.click()} style={{ width: '100%', padding: '14px', backgroundColor: 'transparent', color: colors.text, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', marginBottom: '20px', transition: 'all 0.2s' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.inputField}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  QR-Bilddatei hochladen
                 </button>
               </>
             ) : (
@@ -307,7 +420,9 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
                 
                 <div style={{ backgroundColor: colors.inputField, padding: '15px', borderRadius: '10px', marginBottom: '24px', fontSize: '13px', color: colors.textMuted, border: `1px solid ${colors.inputBorder}` }}>
                   <div style={{ color: colors.primary, fontWeight: 'bold', marginBottom: '6px' }}>Erkannte Hardware:</div>
-                  IP: {tempScreen.ip} <br /> Display: {tempScreen.width} x {tempScreen.height} px
+                  IP: {tempScreen.ip} <br /> Display: {tempScreen.width} {tempScreen.height !== 'Auto' ? `x ${tempScreen.height}` : ''} px
+                  {/* Zeigt den PairingCode an, falls er über die manuelle/Kamera Eingabe kam */}
+                  {tempScreen.code && <><br />Code: {tempScreen.code}</>}
                 </div>
 
                 <input type="text" placeholder="Name des Bildschirms" value={configData.name} onChange={(e) => setConfigData({...configData, name: e.target.value})} style={{ width: '100%', boxSizing: 'border-box', padding: '14px', backgroundColor: colors.inputField, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', color: colors.text, marginBottom: '16px', outline: 'none' }} />
@@ -327,7 +442,7 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
               </div>
             )}
             
-            <button onClick={() => { setIsModalOpen(false); setTempScreen(null); }} style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', width: '100%', fontSize: '14px', fontWeight: 500 }}>
+            <button onClick={() => { setIsModalOpen(false); setTempScreen(null); setPairingCode(''); setIsScanning(false); }} style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', width: '100%', fontSize: '14px', fontWeight: 500 }}>
               Abbrechen
             </button>
           </div>

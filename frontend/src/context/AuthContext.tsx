@@ -43,9 +43,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // 4. DIE WICHTIGSTE FUNKTION: Prüfen, ob der User ein bestimmtes Recht hat
-  const hasPermission = (permission: string) => {
+  const hasPermission = (permissionKey: string) => {
+    // 1. Ist gar kein User eingeloggt? -> Direkt blockieren
     if (!user) return false;
-    return user.permissions.includes(permission);
+
+    // 2. DER GOTT-MODUS: Ist der User ein Administrator? -> ALLES erlauben!
+    if (user.role === 'Administrator') return true;
+
+    // 3. Für alle anderen (Redakteur, Techniker): Streng nach der Liste prüfen
+    return user.permissions?.includes(permissionKey) || false;
   };
 
   return (

@@ -1,4 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR; // <-- WICHTIG: Für SignalR
+using CitySync.Hubs; // <-- WICHTIG: Passe das an deinen tatsächlichen Projektnamen an, falls er anders heißt (z.B. CitySyncApi.Hubs)
+using System.Threading.Tasks;
 
 namespace CitySyncApi.Controllers;
 
@@ -6,8 +9,16 @@ namespace CitySyncApi.Controllers;
 [Route("api/[controller]")]
 public class DashboardController : ControllerBase
 {
+    // --- NEU: DIE SIGNALR STANDLEITUNG EINBINDEN ---
+    private readonly IHubContext<PlayerHub> _hubContext;
+
+    public DashboardController(IHubContext<PlayerHub> hubContext)
+    {
+        _hubContext = hubContext;
+    }
+    // -----------------------------------------------
+
     // GET: api/dashboard
-    // Holt alle Standorte und Monitore für das Frontend
     [HttpGet]
     public IActionResult GetDashboard()
     {
@@ -23,24 +34,13 @@ public class DashboardController : ControllerBase
     }
 
     // POST: api/dashboard/monitor
-    // Fügt einen neuen Monitor (und ggf. Standort) hinzu
     [HttpPost("monitor")]
     public IActionResult AddMonitor([FromBody] AddMonitorRequest request)
     {
         try
         {
-            // 1. Falls es ein neuer Standort ist, diesen anlegen
             DatabaseMonitors.UpsertLocation(request.LocationId, request.LocationName);
-
-            // 2. Monitor speichern
-            DatabaseMonitors.InsertMonitor(
-                request.Id, 
-                request.LocationId, 
-                request.Name, 
-                request.Ip, 
-                request.Resolution
-            );
-
+            DatabaseMonitors.InsertMonitor(request.Id, request.LocationId, request.Name, request.Ip, request.Resolution);
             return Ok(new { message = "Monitor erfolgreich registriert" });
         }
         catch (Exception ex)
@@ -50,7 +50,6 @@ public class DashboardController : ControllerBase
     }
 
     // PUT: api/dashboard/monitor/{id}
-    // Bearbeitet einen bestehenden Monitor
     [HttpPut("monitor/{id}")]
     public IActionResult UpdateMonitor(string id, [FromBody] UpdateMonitorRequest request)
     {
@@ -66,13 +65,19 @@ public class DashboardController : ControllerBase
     }
 
     // DELETE: api/dashboard/monitor/{id}
+    // --- NEU: AUF ASYNC UMGESTELLT UND FUNKSPRUCH HINZUGEFÜGT ---
     [HttpDelete("monitor/{id}")]
-    public IActionResult DeleteMonitor(string id)
+    public async Task<IActionResult> DeleteMonitor(string id)
     {
         try
         {
+            // 1. Aus der Datenbank löschen
             DatabaseMonitors.DeleteMonitor(id);
-            return Ok(new { message = "Monitor gelöscht" });
+            
+            // 2. Den Selbstzerstörungs-Befehl an exakt diesen Player senden!
+            await _hubContext.Clients.Group(id).SendAsync("FactoryReset");
+            
+            return Ok(new { message = "Monitor gelöscht und auf Werkseinstellungen zurückgesetzt" });
         }
         catch (Exception ex)
         {

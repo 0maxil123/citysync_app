@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Building, Save, Image as ImageIcon, Sun, Moon, Clock, HardDrive, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+
 interface SettingsProps {
   globalTheme: 'dark' | 'light';
   onThemeChange: (theme: 'dark' | 'light') => void;
@@ -8,11 +9,20 @@ interface SettingsProps {
 
 export const SettingsView = ({ globalTheme, onThemeChange }: SettingsProps) => {
   
+  // Alte States
   const [defaultDuration, setDefaultDuration] = useState(12);
   const [autoDeleteYears, setAutoDeleteYears] = useState(3);
   const [nightlyRestartTime, setNightlyRestartTime] = useState("03:00");
   const [isSaved, setIsSaved] = useState(false);
-  const {user,hasPermission} = useAuth()
+  
+  // NEUE States für Branding
+  const [municipalityName, setMunicipalityName] = useState("Stadtgemeinde Völkermarkt");
+  const [logoBase64, setLogoBase64] = useState("");
+  const [globalTicker, setGlobalTicker] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { user, hasPermission } = useAuth();
+
   // Daten vom Server laden
   useEffect(() => {
     fetch(`http://localhost:5195/api/settings?userId=${user?.id}`)
@@ -22,10 +32,27 @@ export const SettingsView = ({ globalTheme, onThemeChange }: SettingsProps) => {
           setDefaultDuration(data.defaultDuration || 12);
           setAutoDeleteYears(data.autoDeleteYears || 3);
           setNightlyRestartTime(data.nightlyRestartTime || "03:00");
+          
+          // NEU: Branding Daten laden
+          setMunicipalityName(data.municipalityName || "Stadtgemeinde Völkermarkt");
+          setLogoBase64(data.logoBase64 || "");
+          setGlobalTicker(data.globalTicker || "");
         }
       })
       .catch(err => console.error("Fehler beim Laden:", err));
   }, [user?.id]);
+
+  // Bild hochladen & in Base64 umwandeln
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setLogoBase64(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Daten an den Server schicken
   const handleSave = async () => {
@@ -34,7 +61,12 @@ export const SettingsView = ({ globalTheme, onThemeChange }: SettingsProps) => {
       theme: globalTheme, 
       defaultDuration: defaultDuration,
       autoDeleteYears: autoDeleteYears,
-      nightlyRestartTime: nightlyRestartTime
+      nightlyRestartTime: nightlyRestartTime,
+      
+      // NEU: Branding Daten mitschicken
+      municipalityName: municipalityName,
+      logoBase64: logoBase64,
+      globalTicker: globalTicker
     };
 
     try {
@@ -75,18 +107,15 @@ export const SettingsView = ({ globalTheme, onThemeChange }: SettingsProps) => {
           <p style={{ color: colors.textMuted, margin: 0, fontSize: '14px', transition: 'color 0.3s ease' }}>Branding und globale Konfigurationen.</p>
         </div>
         
-        {/* HIER IST DER MAGISCHE BUTTON */}
         <button 
           onClick={handleSave} 
           disabled={!hasPermission('settings.manage')}
           style={{ 
-            // Wenn kein Recht, dann grauer Hintergrund
             backgroundColor: hasPermission('settings.manage') ? (isSaved ? '#059669' : colors.success) : colors.textMuted, 
             border: 'none', 
             color: '#fff', 
             padding: '12px 24px', 
             borderRadius: '12px', 
-            // Cursor anpassen
             cursor: hasPermission('settings.manage') ? 'pointer' : 'not-allowed', 
             display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, 
             boxShadow: hasPermission('settings.manage') ? '0 4px 12px rgba(16, 185, 129, 0.2)' : 'none', 
@@ -94,18 +123,12 @@ export const SettingsView = ({ globalTheme, onThemeChange }: SettingsProps) => {
           }}
         >
           {isSaved ? <CheckCircle size={18} /> : <Save size={18} />} 
-          
-          {/* Text dynamisch anpassen */}
-          {hasPermission('settings.manage') 
-            ? (isSaved ? 'Gespeichert!' : 'Einstellungen speichern') 
-            : 'Keine Berechtigung'
-          }
+          {hasPermission('settings.manage') ? (isSaved ? 'Gespeichert!' : 'Einstellungen speichern') : 'Keine Berechtigung'}
         </button>
       </div>
 
       {/* INHALTSBEREICH */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '32px 40px 40px 40px' }}>
-        
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
           
           {/* KARTE 1: BRANDING */}
@@ -115,18 +138,45 @@ export const SettingsView = ({ globalTheme, onThemeChange }: SettingsProps) => {
               <h2 style={{ margin: 0, fontSize: '18px' }}>Branding & Identität</h2>
             </div>
             
+            {/* EINGABE: GEMEINDENAME */}
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', color: colors.textMuted, fontSize: '12px', fontWeight: 700, marginBottom: '8px', letterSpacing: '1px' }}>KUNDENNAME / GEMEINDE</label>
-              <input type="text" disabled={!hasPermission('settings.manage')} defaultValue="Mustergemeinde" style={{ width: '100%', padding: '14px', background: colors.inputField, border: `1px solid ${colors.border}`, borderRadius: '12px', color: colors.text, outline: 'none', transition: 'all 0.3s ease' }} />
+              <input 
+                type="text" 
+                value={municipalityName}
+                onChange={(e) => setMunicipalityName(e.target.value)}
+                disabled={!hasPermission('settings.manage')} 
+                style={{ width: '100%', padding: '14px', background: colors.inputField, border: `1px solid ${colors.border}`, borderRadius: '12px', color: colors.text, outline: 'none', transition: 'all 0.3s ease' }} 
+              />
             </div>
 
+            {/* EINGABE: WAPPEN */}
             <div style={{ marginBottom: '24px' }}>
               <label style={{ display: 'block', color: colors.textMuted, fontSize: '12px', fontWeight: 700, marginBottom: '8px', letterSpacing: '1px' }}>GEMEINDE-WAPPEN / LOGO</label>
-              <div style={{ width: '100%', height: '120px', background: colors.inputField, border: `2px dashed ${colors.border}`, borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: colors.textMuted, transition: 'all 0.3s ease' }}>
-                <ImageIcon size={32} style={{ marginBottom: '8px' }} />
-                <span style={{ fontSize: '13px' }}>Klicken zum Hochladen</span>
+              <div 
+                onClick={() => hasPermission('settings.manage') && fileInputRef.current?.click()}
+                style={{ width: '100%', height: '150px', background: colors.inputField, border: `2px dashed ${colors.border}`, borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: hasPermission('settings.manage') ? 'pointer' : 'not-allowed', color: colors.textMuted, transition: 'all 0.3s ease' }}
+              >
+                {logoBase64 ? (
+                  <img src={logoBase64} alt="Wappen" style={{ maxHeight: '80%', maxWidth: '80%', objectFit: 'contain' }} />
+                ) : (
+                  <>
+                    <ImageIcon size={32} style={{ marginBottom: '8px' }} />
+                    <span style={{ fontSize: '13px' }}>Klicken zum Hochladen</span>
+                  </>
+                )}
               </div>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImageUpload} 
+                accept="image/*" 
+                style={{ display: 'none' }} 
+              />
             </div>
+
+            {/* EINGABE: GLOBALER TICKER */}
+            
 
             <div>
               <label style={{ display: 'block', color: colors.textMuted, fontSize: '12px', fontWeight: 700, marginBottom: '8px', letterSpacing: '1px' }}>ERSCHEINUNGSBILD (THEME)</label>

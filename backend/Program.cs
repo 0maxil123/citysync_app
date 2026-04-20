@@ -5,6 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 // --- 1. SERVICES HINZUFÜGEN ---
 
 builder.Services.AddControllers();
+builder.Services.AddSignalR(); // <--- DIESE ZEILE NEU HINZUFÜGEN
 
 // CORS erlauben: Das ist die "Baugenehmigung", damit React mit C# reden darf
 builder.Services.AddCors(options =>
@@ -49,5 +50,6 @@ app.UseStaticFiles();
 
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<CitySync.Hubs.PlayerHub>("/playerHub");  
 
 app.Run();

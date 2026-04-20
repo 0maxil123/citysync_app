@@ -191,6 +191,15 @@ namespace CitySyncApi
                     VALUES (1, 'Super Admin', 'admin@citysync.at', 'admin123', 1);
                 ";
                 command.ExecuteNonQuery();
+                command.CommandText = @"
+                    CREATE TABLE IF NOT EXISTS PendingDevices (
+                        PairingCode TEXT PRIMARY KEY,
+                        IpAddress TEXT NOT NULL,
+                        Resolution TEXT NOT NULL,
+                        PairedMonitorId TEXT, -- Bleibt NULL, bis ein Admin ihn koppelt
+                        CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+                    );";
+                command.ExecuteNonQuery();
             }
             Debug.WriteLine("Datenbank erfolgreich initialisiert und mit RBAC geupdated.");
 
@@ -851,5 +860,79 @@ public static void UpdateMediaData(
                 }
             }
         }
+        // --- NEU: Das "Rundum-Sorglos-Paket" für den Player-Sync ---
+public static object GetSyncData(string monitorId)
+{
+    using (var connection = new SqliteConnection(ConnectionString))
+    {
+        connection.Open();
+
+        // 1. Branding & Ticker aus den SystemSettings holen
+        var settings = new Dictionary<string, string>();
+        var setCmd = connection.CreateCommand();
+        setCmd.CommandText = "SELECT SettingKey, SettingValue FROM SystemSettings";
+        using (var reader = setCmd.ExecuteReader())
+        {
+            while (reader.Read()) settings[reader.GetString(0)] = reader.GetString(1);
+        }
+
+        // 2. Monitor-Konfiguration holen
+        var monCmd = connection.CreateCommand();
+        monCmd.CommandText = "SELECT LayoutType, ButtonNames, ButtonTypes FROM Monitors WHERE Id = @id";
+        monCmd.Parameters.AddWithValue("@id", monitorId);
+        
+        string layout = "sidebar";
+        string bNames = "";
+        string bTypes = "";
+        
+        using (var reader = monCmd.ExecuteReader())
+        {
+            if (reader.Read()) {
+                layout = reader.IsDBNull(0) ? "sidebar" : reader.GetString(0);
+                bNames = reader.IsDBNull(1) ? "" : reader.GetString(1);
+                bTypes = reader.IsDBNull(2) ? "" : reader.GetString(2);
+            }
+        }
+
+        // 3. NUR LIVE-MEDIEN holen
+        var mediaList = new List<object>();
+        var medCmd = connection.CreateCommand();
+        medCmd.CommandText = @"
+            SELECT Id, TabName, FileName, FileType, Duration, SortOrder, Title, EventDate, EventTime, Content 
+            FROM ScreenMedia 
+            WHERE MonitorId = @mId AND IsLive = 1 
+            ORDER BY SortOrder ASC";
+        medCmd.Parameters.AddWithValue("@mId", monitorId);
+
+        using (var reader = medCmd.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                mediaList.Add(new {
+                    id = reader.GetInt32(0),
+                    tabName = reader.GetString(1),
+                    fileName = reader.GetString(2),
+                    fileType = reader.GetString(3),
+                    duration = reader.GetString(4),
+                    title = reader.IsDBNull(6) ? "" : reader.GetString(6),
+                    eventDate = reader.IsDBNull(7) ? "" : reader.GetString(7),
+                    eventTime = reader.IsDBNull(8) ? "" : reader.GetString(8),  
+                    content = reader.IsDBNull(9) ? "" : reader.GetString(9),    
+                    url = "/uploads/" + reader.GetString(2) // Pfad zum Download
+                });
+            }
+        }
+
+        return new {
+            municipalityName = settings.GetValueOrDefault("MunicipalityName", "Stadtgemeinde"),
+            logoBase64 = settings.GetValueOrDefault("LogoBase64", ""),
+            globalTicker = settings.GetValueOrDefault("GlobalTicker", ""),
+            layoutType = layout,
+            buttonNames = bNames,
+            buttonTypes = bTypes,
+            media = mediaList
+        };
+    }
+}
     }
 }
