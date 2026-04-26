@@ -8,6 +8,7 @@ import { NewsLayout } from './NewsLayout';
 
 export const PlaybackView = ({ screenConfig }: { screenConfig: any }) => {
   const [time, setTime] = useState(new Date());
+  const activeId = screenConfig?.monitorId || screenConfig?.id;
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [playlist, setPlaylist] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -17,7 +18,8 @@ export const PlaybackView = ({ screenConfig }: { screenConfig: any }) => {
   const [branding, setBranding] = useState({
     municipalityName: 'Wird geladen...',
     logoBase64: '',
-    globalTicker: 'System startet...'
+    globalTicker: 'System startet...',
+    layoutMode: 'bottom'
   });
 
   const renderMainContent = () => {
@@ -27,8 +29,8 @@ export const PlaybackView = ({ screenConfig }: { screenConfig: any }) => {
 
     if (currentTabMedia.length === 0) {
       return (
-        <div style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>
-          <Monitor size={48} style={{ opacity: 0.2, marginBottom: '10px' }} />
+        <div style={{ textAlign: 'center', color: '#64748b', padding: '20px',marginTop:'150px' }}>
+          <Monitor size={48} style={{ opacity: 0.2, }} />
           <h2 style={{ fontSize: '18px' }}>Keine Live-Inhalte in "{activeTab}"</h2>
           <p style={{ fontSize: '14px' }}>Bitte im Dashboard Inhalte live schalten.</p>
         </div>
@@ -120,7 +122,7 @@ const dynamicTickerText = React.useMemo(() => {
       });
       setTabs(combinedTabs);
       localStorage.setItem('citysync_tabs_cache', JSON.stringify(combinedTabs));
-      setBranding({ municipalityName: data.municipalityName, logoBase64: data.logoBase64, globalTicker: data.globalTicker });
+      setBranding({ municipalityName: data.municipalityName,layoutMode: data.layoutType || 'fullscreen', logoBase64: data.logoBase64, globalTicker: data.globalTicker });
       localStorage.setItem('citysync_branding_cache', JSON.stringify(data));
       for (const item of data.media) {
         const stored = await db.content.get(item.id);
@@ -182,144 +184,186 @@ const dynamicTickerText = React.useMemo(() => {
     }
   };
 
-  return (
-    <div style={{ width: '100vw', height: '100vh', backgroundColor: '#f4f6f8', color: '#333', display: 'flex', flexDirection: 'column', overflow: 'hidden', margin: 0, padding: 0, fontFamily: "'Segoe UI', Roboto, sans-serif" }}>
-      
-      {/* HEADER */}
-      <header style={{ height: '60px', backgroundColor: '#3A7D5E', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', zIndex: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <div style={{ height: '42px', width: '42px', backgroundColor: '#fff', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-            {branding.logoBase64 ? <img src={branding.logoBase64} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '3px' }} alt="Logo" /> : <Shield size={24} color="#3A7D5E" />}
-          </div>
-          <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>{branding.municipalityName}</h1>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-           <div style={{ fontSize: '24px', fontWeight: 700 }}>{time.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>
-           <div style={{ fontSize: '13px', opacity: 0.8 }}>{time.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: 'short' })}</div>
-        </div>
-      </header>
+  const isBottom = branding.layoutMode === 'bottom';
 
-      <main style={{ height: 'calc(100vh - 100px)', display: 'flex' }}>
-        
-        {/* SIDEBAR - VERTIKAL GESTRECKT */}
-        <nav style={{ 
-          width: '180px', 
-          backgroundColor: '#ffffff', 
-          borderRight: '1px solid #e2e8f0', 
-          padding: '20px 10px', // Mehr Padding oben/unten
+return (
+  <div style={{ width: '100vw', height: '100vh', backgroundColor: '#f4f6f8', color: '#333', display: 'flex', flexDirection: 'column', overflow: 'hidden', margin: 0, padding: 0, fontFamily: "'Segoe UI', Roboto, sans-serif" }}>
+    
+    {/* HEADER */}
+    <header style={{ height: '70px', backgroundColor: '#3A7D5E', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', zIndex: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <div style={{ height: '42px', width: '42px', backgroundColor: '#fff', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          {branding.logoBase64 ? <img src={branding.logoBase64} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '3px' }} alt="Logo" /> : <Shield size={24} color="#3A7D5E" />}
+        </div>
+        <h1 style={{ fontSize: '24px', fontWeight: 600, margin: 0 }}>{branding.municipalityName}</h1>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+         <div style={{ fontSize: '24px', fontWeight: 700 }}>{time.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</div>
+         <div style={{ fontSize: '13px', opacity: 0.8 }}>{time.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: 'short' })}</div>
+      </div>
+    </header>
+
+    <main style={{ 
+      height: 'calc(100vh - 110px)', 
+      display: 'flex', 
+      flexDirection: isBottom ? 'column' : 'row', 
+      backgroundColor: '#f0f4f8', 
+      padding: '12px',
+      gap: '12px'
+    }}>
+      
+      {/* SIDEBAR / NAVIGATION CONTAINER */}
+      {branding.layoutMode !== 'fullscreen' && (
+        <div style={{ 
+          width: isBottom ? '100%' : '200px', 
+          height: isBottom ? 'auto' : '100%', 
+          display: 'flex', 
+          flexDirection: isBottom ? 'row' : 'column', 
+          gap: '12px',
+          order: isBottom ? 2 : 1 
+        }}>
+          
+          {/* INSEL 1: MENÜ NAVIGATION */}
+          <nav style={{ 
+            flex: isBottom ? 1 : '0 0 50%', 
+            backgroundColor: '#ffffff', 
+            borderRadius: '24px', 
+            padding: isBottom ? '10px 20px' : '60px 12px 20px 12px', 
+            display: 'flex', 
+            flexDirection: isBottom ? 'row' : 'column', 
+            justifyContent: isBottom ? 'center' : 'flex-start',
+            alignItems: 'center',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.05)', 
+            position: 'relative',
+            overflow: 'hidden' 
+          }}>
+            {!isBottom && (
+              <div style={{ 
+                position: 'absolute', top: '25px', left: 0, right: 0, textAlign: 'center',
+                fontSize: '13px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.5px', textTransform: 'uppercase' 
+              }}>
+                Menü
+              </div>
+            )}
+
+            {tabs.map((tab, i) => (
+              <div 
+                key={i} 
+                onClick={() => { setActiveTab(tab.name); setCurrentIndex(0); }} 
+                style={{ 
+                  padding: isBottom ? '8px 20px' : '12px 12px', 
+                  marginBottom: isBottom ? '0px' : '5px',
+                  backgroundColor: activeTab === tab.name ? '#3A7D5E' : 'transparent', 
+                  color: activeTab === tab.name ? '#ffffff' : '#475569', 
+                  borderRadius: '16px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '12px', 
+                  fontWeight: activeTab === tab.name ? 700 : 500, 
+                  fontSize: '18px', 
+                  cursor: 'pointer',
+                  width: isBottom ? 'auto' : '100%'
+                }}
+              >
+                {getTabIcon(tab.name, tab.type, activeTab === tab.name)}
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {tab.name.toLowerCase() === 'allgemein' ? 'Startseite' : tab.name}
+                </span>
+              </div>
+            ))}
+          </nav>
+
+          {/* INSEL 2: SERVICE / QR CODE */}
+          <div style={{
+            boxSizing: 'border-box', // <--- DAS IST DER MAGISCHE FIX
+            width: isBottom ? 'auto' : '100%',
+            flex: isBottom ? '0 0 auto' : 1,
+            backgroundColor: '#ffffff',
+            borderRadius: '24px', 
+            padding: '12px',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.05)',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div style={{ 
+              flex: 1,
+              boxSizing: 'border-box', // <--- Zur Sicherheit auch hier rein
+              backgroundColor: '#f8fafc', 
+              borderRadius: '20px', 
+              padding: isBottom ? '8px 20px' : '15px', 
+              border: '1px solid #e2e8f0',
+              display: 'flex',
+              flexDirection: isBottom ? 'row' : 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px'
+            }}>
+              <img 
+                src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://www.maria-saal.at" 
+                alt="QR" 
+                style={{ width: isBottom ? '40px' : '90px', opacity: 0.9 }} 
+              />
+              <div style={{ fontSize: '11px', color: '#1e293b', fontWeight: 700, lineHeight: '1.2', textAlign: 'left' }}>
+                GEMEINDE-SERVICE
+                {!isBottom && <br/>}
+                <span style={{ fontSize: '9px', color: '#64748b', fontWeight: 400 }}>{isBottom ? ' Scannen' : 'Scannen für Infos'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONTENT BEREICH INSEL */}
+      <section style={{ 
+          flex: 1, 
           display: 'flex', 
           flexDirection: 'column', 
-          gap: '12px', // Größerer Abstand zwischen den Buttons
-          boxShadow: '2px 0 5px rgba(0,0,0,0.02)' 
+          height: '100%', 
+          minHeight: 0,
+          order: isBottom ? 1 : 2 
         }}>
-          <div style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', letterSpacing: '1.5px', marginBottom: '8px', paddingLeft: '8px', textTransform: 'uppercase' }}>
-            Menü
-          </div>
-
-          {tabs.map((tab, i) => (
-            <div 
-              key={i} 
-              onClick={() => { setActiveTab(tab.name); setCurrentIndex(0); }} 
-              style={{ 
-                padding: '14px 12px', // DEUTLICH HÖHER (vorher 8px)
-                backgroundColor: activeTab === tab.name ? '#3A7D5E' : 'transparent', 
-                color: activeTab === tab.name ? '#ffffff' : '#475569', 
-                borderRadius: '12px', 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '12px', 
-                fontWeight: activeTab === tab.name ? 700 : 500, 
-                fontSize: '15px', 
-                cursor: 'pointer', 
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                boxShadow: activeTab === tab.name ? '0 4px 12px rgba(58, 125, 94, 0.2)' : 'none'
-              }}
-            >
-              {getTabIcon(tab.name, tab.type, activeTab === tab.name)}
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {tab.name.toLowerCase() === 'allgemein' ? 'Startseite' : tab.name}
-              </span>
-            </div>
-          ))}
-          
-          {/* WETTER WIDGET - HÖHER & PRÄSENTER */}
           <div style={{ 
-            marginTop: 'auto', 
-            backgroundColor: '#f8fafc', 
-            borderRadius: '16px', 
-            padding: '20px 15px', // Mehr vertikales Padding
-            border: '1px solid #e2e8f0', 
-            display: 'flex', 
-            flexDirection: 'column', // Text unter das Icon oder nebeneinander mit mehr Platz
-            alignItems: 'center',
-            gap: '8px',
-            textAlign: 'center'
+              flex: 1, 
+              backgroundColor: '#fff', 
+              borderRadius: '28px', 
+              overflow: 'hidden', 
+              boxShadow: '0 10px 30px rgba(0,0,0,0.08)', 
+              position: 'relative', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              minHeight: 0 
           }}>
-            <CloudSun size={34} color="#f59e0b" strokeWidth={2} />
-            <div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#1e293b' }}>14°C</div>
-              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Bewölkt</div>
-            </div>
+              <div style={{ 
+                position: 'absolute', inset: 0, 
+                backgroundImage: 'url("https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1920&q=80")',
+                backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.04, zIndex: 1 
+              }} />
+
+              <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {renderMainContent()}
+              </div>
           </div>
-        </nav>
+      </section>
+    </main>
 
-        {/* CONTENT BEREICH */}
-        <section style={{ flex: 1, padding: '15px', backgroundColor: '#f0f4f8', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ flex: 1, backgroundColor: '#fff', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 4px 25px rgba(0,0,0,0.06)', position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            {renderMainContent()}
+    {/* FOOTER */}
+    <footer style={{ height: '40px', backgroundColor: '#ffffff', borderTop: '1px solid #e0e4e8', display: 'flex', alignItems: 'center', overflow: 'hidden', flexShrink: 0 }}>
+      <div style={{ backgroundColor: '#D32F2F', color: '#fff', height: '100%', padding: '0 20px', display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: '14px', zIndex: 2, boxShadow: '5px 0 15px rgba(0,0,0,0.2)' }}>
+          AKTUELL
+      </div>
+      <div style={{ flex: 1, position: 'relative', height: '100%' }}>
+          <div style={{ position: 'absolute', whiteSpace: 'nowrap', height: '100%', display: 'flex', alignItems: 'center', fontSize: '18px', fontWeight: 600, color: '#334155', animation: `ticker ${Math.max(30, dynamicTickerText.length / 5)}s linear infinite` }}>
+            <span style={{ color: '#D32F2F', marginRight: '15px' }}>+++</span>
+            {dynamicTickerText}
+            <span style={{ color: '#D32F2F', marginLeft: '15px' }}>+++</span>
           </div>
-        </section>
-      </main>
+      </div>
+    </footer>
 
-      {/* FOOTER */}
-      {/* FOOTER MIT DYNAMISCHEM INHALT */}
-<footer style={{ 
-  height: '40px', 
-  backgroundColor: '#ffffff', 
-  borderTop: '1px solid #e0e4e8', 
-  display: 'flex', 
-  alignItems: 'center', 
-  overflow: 'hidden' 
-}}>
-  <div style={{ 
-    backgroundColor: '#D32F2F', 
-    color: '#fff', 
-    height: '100%', 
-    padding: '0 20px', 
-    display: 'flex', 
-    alignItems: 'center', 
-    fontWeight: 700, 
-    fontSize: '14px', 
-    zIndex: 2,
-    boxShadow: '5px 0 15px rgba(0,0,0,0.2)'
-  }}>
-    AKTUELL
+    <style>{`
+      @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    `}</style>
   </div>
-  
-  <div style={{ flex: 1, position: 'relative', height: '100%' }}>
-    <div style={{ 
-      position: 'absolute', 
-      whiteSpace: 'nowrap', 
-      height: '100%', 
-      display: 'flex', 
-      alignItems: 'center', 
-      fontSize: '18px', // Etwas größer für bessere Lesbarkeit
-      fontWeight: 600,
-      color: '#334155', 
-      // Die Geschwindigkeit passt sich nun ein bisschen der Textlänge an
-      animation: `ticker ${Math.max(30, dynamicTickerText.length / 5)}s linear infinite` 
-    }}>
-      <span style={{ color: '#D32F2F', marginRight: '15px' }}>+++</span>
-      {dynamicTickerText}
-      <span style={{ color: '#D32F2F', marginLeft: '15px' }}>+++</span>
-    </div>
-  </div>
-</footer>
-
-      <style>{`
-        @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-      `}</style>
-    </div>
-  );
+);
 };

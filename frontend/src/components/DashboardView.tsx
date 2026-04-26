@@ -3,7 +3,7 @@ import jsQR from 'jsqr';
 import { ScreenCard } from './ScreenCard';
 import { AuthProvider, useAuth } from '../context/AuthContext'; 
 import { Scanner } from '@yudiel/react-qr-scanner';
-import { ChevronDown, Plus, LayoutGrid, CheckCircle2, XCircle, FolderOpen, Image as ImageIcon,QrCode, Trash2,Camera,X } from 'lucide-react';
+import { ChevronDown, Plus, LayoutGrid, CheckCircle2,MonitorUp, XCircle, FolderOpen,ZoomIn, Image as ImageIcon,QrCode, Trash2,Camera,X,Power,RefreshCw } from 'lucide-react';
 const API_BASE = "http://localhost:5195/api/dashboard";
 interface DashboardProps {
   globalTheme: 'dark' | 'light';
@@ -22,6 +22,8 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
   const [tempScreen, setTempScreen] = useState<any>(null); 
   const [configData, setConfigData] = useState({ name: '', locationId: 'new', newLocationName: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeModalTab, setActiveModalTab] = useState<'general' | 'hardware'>('general');
+  
 
   // 3. STATE: BEARBEITEN MODAL
   const [editingScreen, setEditingScreen] = useState<{ortId: string, screen: any} | null>(null);
@@ -69,7 +71,65 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
   const toggleStandort = (id: string) => {
     setCollapsedStandorte(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
+  // --- LOGIK: BILDSCHIRM ABFOTOGRAFIEREN UND SCANNEN ---
+  const handleScreenScan = async () => {
+    try {
+      // 1. Browser fragt den User: "Welchen Bildschirm/Fenster möchtest du scannen?"
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: "monitor" }, // Bevorzugt ganze Bildschirme
+        audio: false
+      });
 
+      // 2. Unsichtbares Video-Element erstellen, um den Stream abzufangen
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.setAttribute("playsinline", "true");
+      await video.play();
+
+      // Wir geben dem Video-Stream kurz 500ms Zeit, um scharf zu laden
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // 3. Canvas (virtuelle Leinwand) erstellen und "Screenshot" machen
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext('2d');
+
+      if (context) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+
+        // 4. jsQR jagt über den fertigen Screenshot
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+        if (code) {
+          // Code gefunden! (Gleiche URL-Prüfung wie beim Live-Scanner)
+          try {
+            const url = new URL(code.data);
+            const codeFromUrl = url.searchParams.get("code");
+            if (codeFromUrl) {
+              setPairingCode(codeFromUrl.toUpperCase());
+            } else {
+              setPairingCode(code.data.toUpperCase());
+            }
+          } catch (e) {
+            setPairingCode(code.data.toUpperCase());
+          }
+        } else {
+          alert("Kein QR-Code auf dem ausgewählten Bildschirm gefunden!");
+        }
+      }
+
+      // 5. GANZ WICHTIG: Die Bildschirmübertragung sofort wieder beenden!
+      stream.getTracks().forEach(track => track.stop());
+      video.remove();
+      canvas.remove();
+
+    } catch (err) {
+      // User hat im Browser-PopUp auf "Abbrechen" geklickt
+      console.log("Bildschirm-Scan abgebrochen.", err);
+    }
+  };
   // --- LOGIK: QR SCAN ---
   const handleQRUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -298,7 +358,7 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
             <p>Keine Daten vom Server empfangen.</p>
           </div>
         ) : (
-          standorte.map(ort => {
+          standorte.filter(ort => ort.screens && ort.screens.length > 0).map(ort => {
             const isCollapsed = collapsedStandorte.includes(ort.id);
             return (
               <div key={ort.id} style={{ marginBottom: '32px' }}>
@@ -309,21 +369,17 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
                   </div>
                 </div>
                 {!isCollapsed && (
-                  <div style={{ backgroundColor: colors.cardBody, padding: '20px', borderRadius: '0 0 10px 10px', minHeight: '80px', border: `1px solid ${colors.border}`, borderTop: 'none', transition: 'all 0.3s ease' }}>
-                    {ort.screens.length === 0 ? (
-                      <div style={{ color: colors.textMuted, textAlign: 'center', padding: '20px', fontSize: '14px' }}>Keine Bildschirme in diesem Standort.</div>
-                    ) : (
-                      ort.screens.map((s: any, i: number) => (
+                    <div style={{ backgroundColor: colors.cardBody, padding: '20px', borderRadius: '0 0 10px 10px', minHeight: '80px', border: `1px solid ${colors.border}`, borderTop: 'none', transition: 'all 0.3s ease' }}>
+                      {/* Hier brauchen wir keine "Keine Bildschirme"-Prüfung mehr! */}
+                      {ort.screens.map((s: any, i: number) => (
                         <ScreenCard 
                           key={i} 
                           {...s} 
                           globalTheme={globalTheme} 
-                          /* Wenn kein Recht da ist, übergeben wir kein onEdit -> der Button verschwindet in der Card */
                           onEdit={hasPermission('screens.manage') ? () => setEditingScreen({ ortId: ort.id, screen: { ...s } }) : undefined} 
                         />
-                      ))
-                    )}
-                  </div>
+                      ))}
+                    </div>
                 )}
               </div>
             );
@@ -357,11 +413,13 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
                     style={{ flex: 1, padding: '14px', backgroundColor: colors.inputField, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', color: colors.text, outline: 'none', fontSize: '16px', fontWeight: 'bold', letterSpacing: '2px', textAlign: 'center' }} 
                   />
                   <button 
-                    onClick={() => setIsScanning(!isScanning)}
-                    style={{ padding: '0 16px', backgroundColor: isScanning ? '#ef4444' : colors.inputField, color: isScanning ? '#fff' : colors.text, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                    title="Kamera öffnen"
+                    onClick={handleScreenScan}
+                    style={{ padding: '0 20px', backgroundColor: colors.primary, color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(94, 66, 166, 0.3)' }}
+                    title="Meinen Bildschirm nach QR-Code abscannen"
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.primaryHover}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = colors.primary}
                   >
-                    {isScanning ? <X size={20} /> : <Camera size={20} />}
+                    <MonitorUp size={22} />
                   </button>
                 </div>
 
@@ -452,33 +510,119 @@ export const DashboardView = ({ globalTheme }: DashboardProps) => {
       {/* MODAL 2 */}
       {editingScreen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(5px)' }}>
-          <div style={{ backgroundColor: colors.modalBg, padding: '40px 30px 30px 30px', borderRadius: '20px', width: '420px', textAlign: 'left', border: `1px solid ${colors.inputBorder}`, boxShadow: '0 20px 50px rgba(0,0,0,0.5)', transition: 'all 0.3s ease' }}>
+          <div style={{ backgroundColor: colors.modalBg, padding: '32px', borderRadius: '20px', width: '520px', textAlign: 'left', border: `1px solid ${colors.inputBorder}`, boxShadow: '0 20px 50px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
-            <h2 style={{ margin: '0 0 24px 0', fontSize: '22px', fontWeight: 600, color: colors.text, textAlign: 'center' }}>Gerät bearbeiten</h2>
-
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: colors.textMuted }}>Anzeigename</label>
-            <input type="text" value={editingScreen.screen.name} onChange={(e) => setEditingScreen({...editingScreen, screen: {...editingScreen.screen, name: e.target.value}})} style={{ width: '100%', boxSizing: 'border-box', padding: '14px', backgroundColor: colors.inputField, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', color: colors.text, marginBottom: '20px', outline: 'none' }} />
-
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: colors.textMuted }}>Netzwerk (IP:Port)</label>
-            <input type="text" value={editingScreen.screen.ip} onChange={(e) => setEditingScreen({...editingScreen, screen: {...editingScreen.screen, ip: e.target.value}})} style={{ width: '100%', boxSizing: 'border-box', padding: '14px', backgroundColor: colors.inputField, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', color: colors.text, marginBottom: '20px', outline: 'none' }} />
-
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', color: colors.textMuted }}>Auflösung (z.B. 1920x1080)</label>
-            <input type="text" value={editingScreen.screen.resolution || ''} onChange={(e) => setEditingScreen({...editingScreen, screen: {...editingScreen.screen, resolution: e.target.value}})} style={{ width: '100%', boxSizing: 'border-box', padding: '14px', backgroundColor: colors.inputField, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', color: colors.text, marginBottom: '32px', outline: 'none' }} />
-            
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-              <button onClick={handleSaveEdit} disabled={!hasPermission('screens.manage')} style={{ flex: 1, padding: '14px', backgroundColor: hasPermission('screens.manage') ? colors.primary : colors.textMuted, border: 'none', borderRadius: '10px', color: 'white', fontWeight: 'bold', cursor: hasPermission('screens.manage') ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {hasPermission('screens.manage') ? 'Speichern' : 'Keine Berechtigung'}
-              </button>
-              {hasPermission('screens.manage') && (
-              <button onClick={handleDeleteScreen} title="Bildschirm löschen" style={{ /* dein style */ }}>
-                <Trash2 size={20} />
-              </button>
-              )}
+            {/* HEADER mit integrierten Power-Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h2 style={{ margin: '0 0 4px 0', fontSize: '24px', fontWeight: 600, color: colors.text }}>Control Center</h2>
+                <p style={{ margin: 0, fontSize: '14px', color: colors.textMuted }}>Geräteverwaltung für diesen Monitor</p>
+              </div>
+              
+              {/* Power Buttons klein & kompakt rechtsbündig */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  onClick={() => alert('Wird später über SignalR neu gestartet!')}
+                  style={{marginTop:'15px', padding: '8px 12px', backgroundColor: 'transparent', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', transition: 'all 0.2s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  title="Monitor neu starten"
+                >
+                  <RefreshCw size={14} /> Neustart
+                </button>
+                <button 
+                  onClick={() => alert('Wird später über SignalR heruntergefahren!')}
+                  style={{marginTop:'15px', padding: '8px 12px', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', transition: 'all 0.2s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  title="Monitor herunterfahren"
+                >
+                  <Power size={14} /> Aus
+                </button>
+              </div>
             </div>
+
+            {/* SEKTION 1: Hardware Infos (Read Only) */}
             
-            <button onClick={() => setEditingScreen(null)} style={{ background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', width: '100%', fontSize: '14px', fontWeight: 500 }}>
-              Abbrechen
-            </button>
+
+            {/* SEKTION 2: Editierbare Einstellungen */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderTop: `1px solid ${colors.inputBorder}`, paddingTop: '24px' }}>
+              <div style={{ display: 'flex', gap: '16px' }}>
+              <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: `1px solid ${colors.inputBorder}` }}>
+                <div style={{ fontSize: '11px', color: colors.textMuted, marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>IP-Adresse</div>
+                <div style={{ fontSize: '15px', color: colors.text, fontFamily: 'monospace' }}>{editingScreen.screen.ip || 'Unbekannt'}</div>
+              </div>
+              <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: `1px solid ${colors.inputBorder}` }}>
+                <div style={{ fontSize: '11px', color: colors.textMuted, marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>Auflösung</div>
+                <div style={{ fontSize: '15px', color: colors.text }}>{editingScreen.screen.resolution || 'Unbekannt'}</div>
+              </div>
+            </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: 500, color: colors.textMuted }}>Anzeigename</label>
+                <input 
+                  type="text" 
+                  value={editingScreen.screen.name} 
+                  onChange={(e) => setEditingScreen({...editingScreen, screen: {...editingScreen.screen, name: e.target.value}})} 
+                  placeholder="z.B. Bahnsteig 22"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '14px', backgroundColor: colors.inputField, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', color: colors.text, outline: 'none', fontSize: '15px' }} 
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: 500, color: colors.textMuted }}>Standort / Gruppe</label>
+                <input 
+                  type="text" 
+                  value={editingScreen.screen.groupName || ''} 
+                  onChange={(e) => setEditingScreen({...editingScreen, screen: {...editingScreen.screen, groupName: e.target.value}})} 
+                  placeholder="z.B. Graz - Busbahnhof"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '14px', backgroundColor: colors.inputField, border: `1px solid ${colors.inputBorder}`, borderRadius: '10px', color: colors.text, outline: 'none', fontSize: '15px' }} 
+                />
+              </div>
+            </div>
+
+            {/* FOOTER: Aktionen */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px' }}>
+              
+              {/* Danger Zone (Löschen) */}
+              <div>
+                {hasPermission('screens.manage') && (
+                  <button 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if(window.confirm("Bist du sicher, dass du diesen Monitor löschen möchtest?")) {
+                        handleDeleteScreen();
+                      }
+                    }} 
+                    title="Monitor löschen" 
+                    style={{ padding: '10px', backgroundColor: 'transparent', color: '#ef4444', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                )}
+              </div>
+
+              {/* Standard-Aktionen */}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button 
+                  onClick={() => setEditingScreen(null)} 
+                  style={{ padding: '10px 16px', background: 'none', border: 'none', color: colors.textMuted, cursor: 'pointer', fontSize: '14px', fontWeight: 500, transition: 'color 0.2s' }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = colors.text}
+                  onMouseLeave={(e) => e.currentTarget.style.color = colors.textMuted}
+                >
+                  Abbrechen
+                </button>
+                <button 
+                  onClick={handleSaveEdit} 
+                  disabled={!hasPermission('screens.manage')} 
+                  style={{ padding: '10px 24px', backgroundColor: hasPermission('screens.manage') ? colors.primary : colors.textMuted, border: 'none', borderRadius: '8px', color: 'white', fontWeight: 600, fontSize: '14px', cursor: hasPermission('screens.manage') ? 'pointer' : 'not-allowed' }}
+                >
+                  Speichern
+                </button>
+              </div>
+
+            </div>
           </div>
         </div>
       )}

@@ -38,6 +38,7 @@ namespace CitySyncApi
                         ButtonNames TEXT,
                         ButtonTypes TEXT,
                         LastPublished DATETIME,
+                        LastSeen DATETIME,
                         FOREIGN KEY (LocationId) REFERENCES Locations(Id) ON DELETE CASCADE
                     );";
                 command.ExecuteNonQuery();
@@ -258,17 +259,139 @@ namespace CitySyncApi
             }
         }
 
-        public static void DeleteMonitor(string id)
+        public static void DeleteMonitor(string monitorId)
+{
+    using (var connection = new SqliteConnection(ConnectionString))
+    {
+        connection.Open();
+        
+        string locationId = null;
+        var filesToDelete = new HashSet<string>(); // HashSet verhindert doppelte Dateinamen
+
+        // ==========================================
+        // SCHRITT 1: Infos VOR dem Löschen sichern
+        // ==========================================
+        
+        // A) Zu welchem Standort gehört der Monitor?
+        using (var cmd = connection.CreateCommand())
         {
-            using (var connection = new SqliteConnection(ConnectionString))
+            cmd.CommandText = "SELECT LocationId FROM Monitors WHERE Id = @id";
+            cmd.Parameters.AddWithValue("@id", monitorId);
+            var result = cmd.ExecuteScalar();
+            if (result != null && result != DBNull.Value) 
             {
-                connection.Open();
-                var command = connection.CreateCommand();
-                command.CommandText = "DELETE FROM Monitors WHERE Id = @id;";
-                command.Parameters.AddWithValue("@id", id);
-                command.ExecuteNonQuery();
+                locationId = result.ToString();
             }
         }
+
+        // B) Welche Dateien liegen in den aktiven Medien (ScreenMedia)?
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "SELECT FileName, FileType FROM ScreenMedia WHERE MonitorId = @id";
+            cmd.Parameters.AddWithValue("@id", monitorId);
+            using (var reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    string fName = reader.GetString(0);
+                    string fType = reader.GetString(1);
+                    filesToDelete.Add(fName);
+                    
+                    // Wenn es ein Video ist, müssen wir auch das Vorschaubild löschen
+                    if (fType == "video") 
+                    {
+                        filesToDelete.Add(System.IO.Path.GetFileNameWithoutExtension(fName) + "_thumb.jpg");
+                    }
+                }
+            }
+        }
+
+        // C) Welche Dateien liegen im Medien-Archiv (MediaArchive)?
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "SELECT Url FROM MediaArchive WHERE MonitorId = @id";
+            cmd.Parameters.AddWithValue("@id", monitorId);
+            using (var reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    if (!reader.IsDBNull(0))
+                    {
+                        string url = reader.GetString(0);
+                        // Extrahiert nur den Dateinamen (z.B. aus "/uploads/bild.jpg" wird "bild.jpg")
+                        string fileName = System.IO.Path.GetFileName(url);
+                        if (!string.IsNullOrEmpty(fileName))
+                        {
+                            filesToDelete.Add(fileName);
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // SCHRITT 2: Alles in der Datenbank putzen
+        // ==========================================
+        using (var cmd = connection.CreateCommand())
+        {
+            // Wir löschen ALLES ausnahmslos, was mit diesem Monitor zu tun hat.
+            // (Selbst wenn ON DELETE CASCADE an ist, ist explizit löschen immer sicherer!)
+            cmd.CommandText = @"
+                DELETE FROM Routines WHERE MonitorId = @id;
+                DELETE FROM ScreenMedia WHERE MonitorId = @id;
+                DELETE FROM MediaArchive WHERE MonitorId = @id;
+                DELETE FROM PendingDevices WHERE PairedMonitorId = @id;
+                DELETE FROM Monitors WHERE Id = @id;
+            ";
+            cmd.Parameters.AddWithValue("@id", monitorId);
+            cmd.ExecuteNonQuery();
+        }
+
+        // ==========================================
+        // SCHRITT 3: Standort prüfen und evtl. löschen
+        // ==========================================
+        if (!string.IsNullOrEmpty(locationId))
+        {
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.CommandText = "SELECT COUNT(*) FROM Monitors WHERE LocationId = @locId";
+                cmd.Parameters.AddWithValue("@locId", locationId);
+                long count = (long)cmd.ExecuteScalar();
+
+                if (count == 0) // War der letzte Monitor!
+                {
+                    using (var delLocCmd = connection.CreateCommand())
+                    {
+                        delLocCmd.CommandText = "DELETE FROM Locations WHERE Id = @locId";
+                        delLocCmd.Parameters.AddWithValue("@locId", locationId);
+                        delLocCmd.ExecuteNonQuery();
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // SCHRITT 4: Physische Dateien von Festplatte putzen
+        // ==========================================
+        string uploadFolder = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+        
+        foreach (var file in filesToDelete)
+        {
+            try 
+            {
+                string filePath = System.IO.Path.Combine(uploadFolder, file);
+                if (System.IO.File.Exists(filePath)) 
+                {
+                    System.IO.File.Delete(filePath);
+                }
+            } 
+            catch 
+            { 
+                // Ignoriere gesperrte/fehlende Dateien leise
+            }
+        }
+    }
+}
         public static string DeleteMedia(int id)
         {
             using (var connection = new SqliteConnection(ConnectionString))
@@ -315,7 +438,7 @@ namespace CitySyncApi
                         var screens = new List<object>();
 
                         var monCommand = connection.CreateCommand();
-                        monCommand.CommandText = "SELECT Id, Name, IP, Resolution, Status, LayoutType, ButtonCount, ButtonNames, ButtonTypes FROM Monitors WHERE LocationId = @locId;";
+                        monCommand.CommandText = "SELECT Id, Name, IP, Resolution, Status, LayoutType, ButtonCount, ButtonNames, ButtonTypes, LastSeen FROM Monitors WHERE LocationId = @locId;";
                         monCommand.Parameters.AddWithValue("@locId", locId);
 
                         using (var monReader = monCommand.ExecuteReader())
@@ -383,17 +506,30 @@ namespace CitySyncApi
                                 }
                                 // =========================================================
 
+                                // 1. Letzten Herzschlag auslesen (Index 9, weil es das 10. Feld im SELECT ist)
+                                DateTime lastSeen = DateTime.MinValue;
+                                if (!monReader.IsDBNull(9)) 
+                                {
+                                    // SQLite speichert Datum meist als String, also parsen wir es sicherheitshalber
+                                    DateTime.TryParse(monReader.GetString(9), out lastSeen);
+                                }
+
+                                // 2. LOGIK: Wenn der Ping in den letzten 10 Minuten kam -> Online
+                                bool isOnline = (DateTime.Now - lastSeen).TotalMinutes < 10;
+
+                                // 3. Bildschirm-Objekt füllen
                                 screens.Add(new {
                                     id = monitorId,
                                     name = monReader.GetString(1),
                                     ip = monReader.GetString(2),
                                     resolution = monReader.GetString(3),
-                                    status = monReader.GetString(4),
+                                    // HIER überschreiben wir den Datenbank-Status mit unserer Live-Berechnung!
+                                    status = isOnline ? "online" : "offline", 
                                     layoutType = monReader.IsDBNull(5) ? "sidebar" : monReader.GetString(5),
                                     buttonCount = monReader.IsDBNull(6) ? 0 : monReader.GetInt32(6),
                                     buttonNames = monReader.IsDBNull(7) ? "" : monReader.GetString(7),
                                     buttonTypes = monReader.IsDBNull(8) ? "" : monReader.GetString(8),
-                                    previewUrl = previewUrl, // <--- HIER WIRD ES AN DAS FRONTEND ÜBERGEBEN!
+                                    previewUrl = previewUrl,
                                     routines = routinesList 
                                 });
                             }
@@ -917,7 +1053,7 @@ public static object GetSyncData(string monitorId)
                     title = reader.IsDBNull(6) ? "" : reader.GetString(6),
                     eventDate = reader.IsDBNull(7) ? "" : reader.GetString(7),
                     eventTime = reader.IsDBNull(8) ? "" : reader.GetString(8),  
-                    content = reader.IsDBNull(9) ? "" : reader.GetString(9),    
+                    content = reader.IsDBNull(9) ? "" : reader.GetString(9),     
                     url = "/uploads/" + reader.GetString(2) // Pfad zum Download
                 });
             }

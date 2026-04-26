@@ -16,7 +16,7 @@ export const SettingsView = ({ globalTheme, onThemeChange }: SettingsProps) => {
   const [isSaved, setIsSaved] = useState(false);
   
   // NEUE States für Branding
-  const [municipalityName, setMunicipalityName] = useState("Stadtgemeinde Völkermarkt");
+  const [municipalityName, setMunicipalityName] = useState("");
   const [logoBase64, setLogoBase64] = useState("");
   const [globalTicker, setGlobalTicker] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -34,7 +34,7 @@ export const SettingsView = ({ globalTheme, onThemeChange }: SettingsProps) => {
           setNightlyRestartTime(data.nightlyRestartTime || "03:00");
           
           // NEU: Branding Daten laden
-          setMunicipalityName(data.municipalityName || "Stadtgemeinde Völkermarkt");
+          setMunicipalityName(data.municipalityName);
           setLogoBase64(data.logoBase64 || "");
           setGlobalTicker(data.globalTicker || "");
         }

@@ -235,6 +235,21 @@ namespace CitySync.Controllers
                 return BadRequest(ex.Message);
             }
         }
+        [HttpPost("heartbeat/{id}")]
+        public IActionResult Heartbeat(string id)
+        {
+            using (var connection = new SqliteConnection(_connectionString))
+            {
+                connection.Open();
+                var cmd = connection.CreateCommand();
+                // Aktualisiere den LastSeen Zeitstempel auf JETZT
+                cmd.CommandText = "UPDATE Monitors SET LastSeen = @now WHERE Id = @id";
+                cmd.Parameters.AddWithValue("@now", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                cmd.Parameters.AddWithValue("@id", id);
+                cmd.ExecuteNonQuery();
+            }
+            return Ok();
+        }
 
 
     }

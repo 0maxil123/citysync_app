@@ -6,7 +6,7 @@ import {useAuth} from '../context/AuthContext';
 import { 
   ArrowLeft, Monitor, Settings2, Upload, Trash2, Clock, 
   CalendarDays, LayoutDashboard, Loader2, GripVertical, CheckSquare, Square, 
-  ImagePlus, Film, FileText, Infinity, X, Edit3, Newspaper, Calendar, Info
+  ImagePlus, Film, FileText, Infinity, X, Edit3, Newspaper, Calendar, Info, ZoomIn,
 } from 'lucide-react';
 
 interface ScreenEditorProps {
@@ -31,6 +31,14 @@ export const ScreenEditor = ({globalTheme, screen, onBack }: ScreenEditorProps) 
   const [activeTabIdx, setActiveTabIdx] = useState(0);
   const [selectedMediaIds, setSelectedMediaIds] = useState<number[]>([]);
   const [autoSelectNames, setAutoSelectNames] = useState<string[]>([]);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+
+// Die Konfiguration für unsere 3 Layouts (Hier verweisen wir auf die Bilder im public Ordner)
+const layoutOptions = [
+  { type: 'sidebar', label: 'Sidebar (Links)', img: '/layout_sidebar.png' },
+  { type: 'bottom', label: 'Bottom (Unten)', img: '/layout_bottom.png' },
+  { type: 'fullscreen', label: 'Fullscreen', img: '/layout_fullscreen.png' }
+];
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -581,20 +589,56 @@ export const ScreenEditor = ({globalTheme, screen, onBack }: ScreenEditorProps) 
         </div>
       )}
 
+      {/* --- 1. DAS EIGENTLICHE LAYOUT MODAL --- */}
       {isLayoutModalOpen && (
         <div style={{ position: 'fixed', inset: 0, background: colors.backdrop, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: colors.bgModal, padding: '40px', borderRadius: '12px', width: '600px', border: `1px solid ${colors.borderStrong}` }}>
             <h2 style={{ marginTop: 0, textAlign: 'center', color: colors.textMain }}>Layout & Design</h2>
             <p style={{ textAlign: 'center', color: colors.textSub, marginBottom: '30px' }}>Wie soll der Monitor grundsätzlich aussehen?</p>
             
+            {/* --- DIE NEUE SCREENSHOT GRID --- */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '32px' }}>
-              {['sidebar', 'bottom', 'fullscreen'].map(type => (
-                <div key={type} onClick={() => setLayoutType(type)} style={{ cursor: 'pointer', textAlign: 'center' }}>
-                  <div style={{ height: '100px', borderRadius: '12px', border: layoutType === type ? `3px solid ${colors.primary}` : `1px solid ${colors.borderItem}`, backgroundColor: isDark ? '#0a0a0a' : '#f9fafb', position: 'relative', overflow: 'hidden' }}>
-                    {type === 'sidebar' && <div style={{ width: '25%', height: '100%', background: isDark ? '#1a1a1a' : '#e5e7eb', borderRight: `1px solid ${colors.borderItem}` }} />}
-                    {type === 'bottom' && <div style={{ width: '100%', height: '25%', background: isDark ? '#1a1a1a' : '#e5e7eb', borderTop: `1px solid ${colors.borderItem}`, position: 'absolute', bottom: 0 }} />}
+              {layoutOptions.map(option => (
+                <div key={option.type} onClick={() => setLayoutType(option.type)} style={{ cursor: 'pointer', textAlign: 'center' }}>
+                  
+                  <div style={{ 
+                    height: '110px', 
+                    borderRadius: '12px', 
+                    border: layoutType === option.type ? `3px solid ${colors.primary}` : `1px solid ${colors.borderItem}`, 
+                    position: 'relative', 
+                    overflow: 'hidden',
+                    backgroundImage: `url(${option.img})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    transition: 'all 0.2s',
+                    boxShadow: layoutType === option.type ? `0 0 15px ${colors.primary}40` : 'none',
+                    filter: layoutType === option.type ? 'brightness(1)' : 'brightness(0.5)' // Nicht-gewählte leicht abdunkeln
+                  }}>
+                    
+                    {/* --- ZOOM BUTTON IN DER ECKE --- */}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation(); // Verhindert, dass der Klick das Layout auswählt
+                        setZoomedImage(option.img);
+                      }}
+                      style={{ 
+                        position: 'absolute', top: '6px', right: '6px', 
+                        backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', 
+                        border: 'none', borderRadius: '8px', padding: '6px', 
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        backdropFilter: 'blur(4px)', transition: 'background 0.2s'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = colors.primary}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.6)'}
+                      title="Bild vergrößern"
+                    >
+                      <ZoomIn size={16} />
+                    </button>
                   </div>
-                  <p style={{ marginTop: '10px', fontSize: '12px', color: layoutType === type ? colors.textMain : colors.textSub, textTransform: 'uppercase', fontWeight: layoutType === type ? 'bold' : 'normal' }}>{type}</p>
+
+                  <p style={{ marginTop: '10px', fontSize: '12px', color: layoutType === option.type ? colors.textMain : colors.textSub, textTransform: 'uppercase', fontWeight: layoutType === option.type ? 'bold' : 'normal', transition: 'color 0.2s' }}>
+                    {option.label}
+                  </p>
                 </div>
               ))}
             </div>
@@ -611,6 +655,26 @@ export const ScreenEditor = ({globalTheme, screen, onBack }: ScreenEditorProps) 
               <button onClick={saveLayoutToDatabase} style={{ flex: 2, padding: '14px', background: colors.primary, color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Speichern & Anwenden</button>
             </div>          
           </div>
+        </div>
+      )}
+
+      {/* --- 2. DIE ZOOM-LIGHTBOX --- */}
+      {zoomedImage && (
+        <div 
+          onClick={() => setZoomedImage(null)} 
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}
+        >
+          <img 
+            src={zoomedImage} 
+            alt="Layout Vorschau groß" 
+            style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: '16px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)', objectFit: 'contain' }} 
+          />
+          <button 
+            onClick={() => setZoomedImage(null)} 
+            style={{ position: 'absolute', top: '30px', right: '30px', background: 'rgba(255,255,255,0.1)', color: 'white', border: 'none', borderRadius: '50%', padding: '10px', cursor: 'pointer', display: 'flex' }}
+          >
+            <X size={32} />
+          </button>
         </div>
       )}
 

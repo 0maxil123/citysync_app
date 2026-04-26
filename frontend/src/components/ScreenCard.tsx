@@ -1,6 +1,6 @@
-import { Monitor, Settings, Power, Wifi, Play } from 'lucide-react';
+import { Monitor, Settings } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-// NEU: Wir fügen globalTheme zu den Props hinzu (Standard ist 'dark')
+
 export const ScreenCard = ({ name, ip, status, contentType, resolution, onEdit, globalTheme = 'dark' }: any) => {
   const statusConfig = {
     online: { color: '#4caf50', label: 'Online' },
@@ -9,7 +9,7 @@ export const ScreenCard = ({ name, ip, status, contentType, resolution, onEdit, 
   };
   const config = statusConfig[status as keyof typeof statusConfig] || { color: '#888', label: 'Unbekannt' };
   const { hasPermission } = useAuth();  
-  // NEU: Unsere dynamischen Farben für die Kachel
+
   const isDark = globalTheme === 'dark';
   const colors = {
     bg: isDark ? 'rgb(45, 45, 45)' : '#ffffff',
@@ -19,7 +19,7 @@ export const ScreenCard = ({ name, ip, status, contentType, resolution, onEdit, 
     shadow: isDark ? '0 8px 32px rgba(0,0,0,0.4)' : '0 4px 15px rgba(0,0,0,0.05)',
     badgeBg: isDark ? '#333333' : '#f3f4f6',
     hoverBg: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
-    statusBg: `${config.color}15` // Ein sehr transparenter Hauch der Status-Farbe (sieht in Hell & Dunkel super aus)
+    statusBg: `${config.color}15` 
   };
 
   return (
@@ -33,7 +33,7 @@ export const ScreenCard = ({ name, ip, status, contentType, resolution, onEdit, 
       border: `1px solid ${colors.border}`,
       boxShadow: colors.shadow,
       position: 'relative',
-      transition: 'all 0.3s ease', // Weicher Übergang beim Theme-Wechsel
+      transition: 'all 0.3s ease',
     }}>
       
       {/* Linker Bereich: Icon */}
@@ -61,48 +61,30 @@ export const ScreenCard = ({ name, ip, status, contentType, resolution, onEdit, 
           </div>
         </div>
         
-        {/* Sub-Info: IP & Wifi & Auflösung */}
+        {/* Sub-Info: IP & Auflösung */}
         <div style={{ color: colors.textSub, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px', transition: 'color 0.3s ease' }}>
-          IP: <span style={{ color: colors.textSub }}>{ip}</span>
-          <Wifi size={14} style={{ opacity: 0.5, marginLeft: '4px' }} />
-          {/* Auflösung */}
+          <span style={{ fontSize: '12px', backgroundColor: colors.badgeBg, padding: '2px 6px', borderRadius: '4px', transition: 'background-color 0.3s ease' }}>
+            IP: {ip}
+          </span>
           {resolution && (
-             <span style={{ marginLeft: '8px', fontSize: '12px', backgroundColor: colors.badgeBg, padding: '2px 6px', borderRadius: '4px', transition: 'background-color 0.3s ease' }}>
-               {resolution}
+             <span style={{ fontSize: '12px', backgroundColor: colors.badgeBg, padding: '2px 6px', borderRadius: '4px', transition: 'background-color 0.3s ease' }}>
+               Res: {resolution}
              </span>
           )}
         </div>
-
-        {/* Status-Leiste: Aktueller Inhalt */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: colors.textSub, fontSize: '14px', paddingTop: '4px', transition: 'color 0.3s ease' }}>
-          <Play size={14} fill={colors.textSub} color="transparent" />
-          <span>Aktuell: <span style={{ color: colors.textMain, fontWeight: 500, transition: 'color 0.3s ease' }}>{contentType || "Kein Inhalt"}</span></span>
-        </div>
       </div>
 
-      {/* Rechter Bereich: Die Action-Column */}
+      {/* Rechter Bereich: Nur noch EIN Action-Button */}
       {hasPermission('screens.manage') && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '24px', borderLeft: `1px solid ${colors.border}`, alignItems: 'center', transition: 'border-color 0.3s ease' }}>
-          
-          {/* Power Button */}
-          <button 
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '5px', borderRadius: '8px', transition: 'all 0.2s', color: '#f44336', opacity: 0.7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(244, 67, 54, 0.1)'; e.currentTarget.style.opacity = '1'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.opacity = '0.7'; }}
-            title="Monitor neu starten / ausschalten"
-          >
-            <Power size={20} />
-          </button>
-
-          {/* Settings Button */}
+        <div style={{ display: 'flex', paddingLeft: '24px', borderLeft: `1px solid ${colors.border}`, alignItems: 'center', transition: 'border-color 0.3s ease', height: '100%' }}>
           <button 
             onClick={onEdit} 
-            style={{ background: 'none', border: 'none', color: colors.textSub, cursor: 'pointer', padding: '5px', borderRadius: '8px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = colors.textMain; e.currentTarget.style.backgroundColor = colors.hoverBg; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = colors.textSub; e.currentTarget.style.backgroundColor = 'transparent'; }}
-            title="Monitor konfigurieren"
+            style={{ background: colors.badgeBg, border: `1px solid ${colors.border}`, color: colors.textMain, cursor: 'pointer', padding: '12px', borderRadius: '50%', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = colors.hoverBg; e.currentTarget.style.transform = 'rotate(30deg)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = colors.badgeBg; e.currentTarget.style.transform = 'rotate(0deg)'; }}
+            title="Details & Steuerung öffnen"
           >
-            <Settings size={20} /> 
+            <Settings size={22} /> 
           </button>
         </div>
       )}
